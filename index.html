@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Gim Pong</title>
+        <style>
+            body {
+                margin:0;
+                background: #111111;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+            }
+        </style>
+    </head>
+<body>
+    <canvas id='c' width='480' height='520'></canvas>
+    <script>
+var canvas = document.getElementById('c'),
+    ctx = canvas.getContext('2d');
+
+var W = canvas.width,
+    H = canvas.height,
+    keys = {},
+    lastTime = 0;
+
+var scorePlayer = 0,
+    scoreAI = 0;
+
+var WIN_SCORE = 5;
+
+// ========================
+// PROGRESSIVE DIFFICULTY & LEVEL SYSTEM
+// ========================
+var currentLevel = 1;
+var BASE_BALL_SPEED = 200; 
+
+// ========================
+// STATE MACHINE
+// ========================
+var gameState = 'splash'; 
+var winner = '';
+var isPaused = false; 
+
+// ========================
+// HIGH SCORE
+// ========================
+var highScore = parseInt(localStorage.getItem('pongHS') || '0');
+
+// ========================
+// SCREEN SHAKE & FLOATING TEXT
+// ========================
+var shakeTimer = 0, shakeX = 0, shakeY = 0, shakeInt = 0;
+var floatingTexts = [];
+
+// ========================
+// BONUS 4: SLOW MOTION (Global Status)
+// ========================
+var slowTimer = 0;       
+var SLOW_DURATION = 1.0; 
+
+var PH = 80,
+    PW = 12;
+
+// ========================
+// BONUS 2: MODE 2 PLAYER
+// ========================
+var twoPlayerMode = false; 
+
+var player = { x: 10, y: H/2 - PH/2, w: PW, h: PH, speed: 320, glow: 10 }; // Ditambah variabel glow
+var player2 = { x: W - 10 - PW, y: H/2 - PH/2, w: PW, h: PH, speed: 320, glow: 10 };
+var ai = { x: W - 10 - PW, y: H/2 - PH/2, w: PW, h: PH, speed: 160, glow: 10 };
+
+var ball = {
+    x: W/2,
+    y: H/2,
+    vx: 200,
+    vy: 150,
+    r: 9,
+    trail: [],
+    color: '#fff' // Ditambah variabel color
+};
+
+// ========================
+// PARTIKEL SISTEM
+// ========================
+var particles = [];
+function emitP(x, y, color, count) {
+    for(var i=0; i<count; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random()-0.5)*250,
+            vy: (Math.random()-0.5)*250,
+            alpha: 1,
+            color: color
+        });
+    }
+}
+
+function spawnFloat(x, y, text, color) {
+    floatingTexts.push({ x: x, y: y, text: text, color: color, life: 1.0 });
+}
+
+// =======================
+// AUDIO
+// =======================
+var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(freq, type, duration, vol) {
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.frequency.value = freq; osc.type = type;
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.start(); osc.stop(audioCtx.currentTime + duration);
+}
+
+function resetBall(dir){
+    ball.x = W/2;
+    ball.y = H/2;
+    var speedMultiplier = 1 + (currentLevel - 1) * 0.15; 
+    ball.vx = dir * BASE_BALL_SPEED * speedMultiplier;
+    ball.vy = (Math.random()*200 - 100) * speedMultiplier;
+    ball.trail = [];
+}
+
+function resetGame(){
+    scorePlayer = 0; scoreAI = 0; currentLevel = 1;
+    winner = ''; ai.h = PH; player2.h = PH;
+    player.y = H/2 - PH/2; player2.y = H/2 - PH/2; ai.y = H/2 - PH/2;
+    ai.speed = 160; shakeTimer = 0; slowTimer = 0;
+    resetBall(Math.random() > 0.5 ? 1 : -1);
+    gameState = 'playing';
+}
+
+function update(dt) {
+    if (gameState !== 'playing' || isPaused) return;
+
+    // --- TANTANGAN 3: Slow motion saat pantul (dt *= 0.4 selama 0.5 detik) ---
+    // Logika ini digabung dengan slow motion manual Shift agar tidak bentrok
+    var effectiveDt = (slowTimer > 0) ? dt * 0.4 : dt; //
+    if(slowTimer > 0) { slowTimer -= dt; if(slowTimer < 0) slowTimer = 0; }
+
+    if(shakeTimer > 0){
+        shakeTimer -= dt;
+        shakeX = (Math.random()-0.5) * shakeInt;
+        shakeY = (Math.random()-0.5) * shakeInt;
+    } else { shakeX = 0; shakeY = 0; }
+
+    particles.forEach((p, i) => {
+        p.x += p.vx * dt; p.y += p.vy * dt; p.alpha -= dt * 1.5;
+        if(p.alpha <= 0) particles.splice(i, 1);
+    });
+    floatingTexts.forEach((ft, i) => {
+        ft.y -= 40 * dt; ft.life -= dt;
+        if(ft.life <= 0) floatingTexts.splice(i, 1);
+    });
+
+    // --- TANTANGAN 1: Paddle berdenyut saat bola mendekat dalam 100px ---
+    var distToP1 = Math.hypot(ball.x - (player.x + PW), ball.y - (player.y + player.h/2));
+    player.glow = (distToP1 < 100) ? 10 + Math.sin(Date.now() * 0.01) * 8 : 10; //
+
+    if(keys['w'] || keys['W']) player.y -= player.speed * effectiveDt;
+    if(keys['s'] || keys['S']) player.y += player.speed * effectiveDt;
+    player.y = Math.max(0, Math.min(H-player.h, player.y));
+
+    var dynamicPaddleHeight = Math.max(40, PH - (currentLevel - 1) * 10);
+    var rightPaddle = twoPlayerMode ? player2 : ai;
+    rightPaddle.h = dynamicPaddleHeight;
+
+    // Denyut untuk paddle kanan (AI/P2)
+    var distToPR = Math.hypot(ball.x - rightPaddle.x, ball.y - (rightPaddle.y + rightPaddle.h/2));
+    rightPaddle.glow = (distToPR < 100) ? 10 + Math.sin(Date.now() * 0.01) * 8 : 10; //
+
+    if(twoPlayerMode){
+        if(keys['ArrowUp']) player2.y -= player2.speed * effectiveDt;
+        if(keys['ArrowDown']) player2.y += player2.speed * effectiveDt;
+    } else {
+        // 1. Hitung potensi kecepatan berdasarkan skor dan level
+        var calculatedAiSpeed = (160 + scorePlayer * 18) * (1 + (currentLevel - 1) * 0.12);
+
+        // 2. Batasi agar tidak lebih dari 800 (Balancing)
+        var aiSpeed = Math.min(calculatedAiSpeed, 800); 
+
+        // 3. Gerakkan AI sesuai target bola (Gunakan aiSpeed yang sudah dibatasi)
+        var aiTarget = ball.y - ai.h / 2;
+        ai.y += Math.sign(aiTarget - ai.y) * Math.min(Math.abs(aiTarget - ai.y), aiSpeed * effectiveDt);}
+    rightPaddle.y = Math.max(0, Math.min(H-rightPaddle.h, rightPaddle.y));
+
+    ball.trail.push({x: ball.x, y: ball.y});
+    if(ball.trail.length > 10) ball.trail.shift();
+
+    ball.x += ball.vx * effectiveDt;
+    ball.y += ball.vy * effectiveDt;
+
+    // --- TANTANGAN 4: Warna bola berdasarkan kecepatan ---
+    var currentSpeed = Math.sqrt(ball.vx**2 + ball.vy**2);
+    ball.color = (currentSpeed < 350) ? '#4facfe' : '#ff6b6b'; // Lambat=Biru, Cepat=Merah
+
+    if(ball.y - ball.r < 0 || ball.y + ball.r > H){
+        ball.vy *= -1;
+        playSound(400, 'square', 0.08, 0.05);
+    }
+
+    // Paddle Collision + TANTANGAN 3 (Slow Motion saat Pantul)
+    if(ball.vx < 0 && ball.x - ball.r < player.x + PW && ball.y > player.y && ball.y < player.y + player.h){
+        ball.vx = Math.abs(ball.vx) * 1.06;
+        var rel = (ball.y - (player.y + player.h/2)) / (player.h/2);
+        ball.vy = rel * 230;
+        slowTimer = 0.5; // Efek slow motion 0.5 detik
+        emitP(player.x + PW, ball.y, '#4facfe', 8);
+        playSound(700, 'square', 0.08, 0.05);
+    }
+    if(ball.vx > 0 && ball.x + ball.r > rightPaddle.x && ball.y > rightPaddle.y && ball.y < rightPaddle.y + rightPaddle.h){
+        ball.vx = -Math.abs(ball.vx) * 1.06;
+        var rel = (ball.y - (rightPaddle.y + rightPaddle.h/2)) / (rightPaddle.h/2);
+        ball.vy = rel * 200;
+        slowTimer = 0.5; // Efek slow motion 0.5 detik
+        emitP(rightPaddle.x, ball.y, '#ff6b6b', 8);
+        playSound(700, 'square', 0.08, 0.05);
+    }
+
+    if(ball.x - ball.r < 0){
+        scoreAI++; playSound(300, 'sawtooth', 0.2, 0.08);
+        spawnFloat(W/2, H/2 - 30, 'AI Point', '#ff6b6b');
+        shakeTimer = 0.22; shakeInt = 8;
+        if(scoreAI >= WIN_SCORE){ gameState = 'gameover'; winner = twoPlayerMode ? 'PLAYER 2 WIN!' : 'YOU LOSE!'; }
+        else resetBall(1);
+    }
+
+    if(ball.x + ball.r > W){
+        scorePlayer++; playSound(300, 'sawtooth', 0.2, 0.08);
+        spawnFloat(W/2, H/2 - 30, 'Your Point!', '#43e97b');
+        if(scorePlayer < WIN_SCORE) currentLevel++;
+        if(scorePlayer > highScore){ highScore = scorePlayer; localStorage.setItem('pongHS', highScore); }
+        if(scorePlayer >= WIN_SCORE){ gameState = 'gameover'; winner = twoPlayerMode ? 'PLAYER 1 WIN!' : 'YOU WIN!'; }
+        else resetBall(-1);
+    }
+}
+
+function render(){
+    ctx.fillStyle = '#0b0c10';
+    ctx.fillRect(0,0,W,H);
+
+    if(gameState === 'splash'){
+        ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+        ctx.font = 'bold 52px Arial'; ctx.fillText('PONG', W/2, H/2 - 80);
+        ctx.font = '18px Arial'; ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillText('Tekan ENTER/SPACE → vs AI', W/2, H/2 - 20);
+        ctx.fillText('Tekan T → 2 Player', W/2, H/2 + 10);
+        ctx.font = '14px Arial'; ctx.fillText('Shift: Slow-mo', W/2, H/2 + 50);
+        ctx.fillText('High Score: ' + highScore, W/2, H/2 + 90);
+        return;
+    }
+
+    if (isPaused && gameState === 'playing') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+        ctx.font = 'bold 40px Arial'; ctx.fillText('PAUSED', W / 2, H / 2);
+        ctx.font = '16px Arial'; ctx.fillText('Tekan P untuk Melanjutkan', W / 2, H / 2 + 40);
+    }
+
+    ctx.save();
+    if(shakeTimer > 0) ctx.translate(shakeX, shakeY);
+
+    if(slowTimer > 0){ ctx.fillStyle = 'rgba(0, 100, 255, 0.06)'; ctx.fillRect(0,0,W,H); }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    for (var i = 0; i < W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke(); }
+    for (var i = 0; i < H; i += 40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(W, i); ctx.stroke(); }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 4; ctx.setLineDash([12,12]);
+    ctx.beginPath(); ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H); ctx.stroke(); ctx.setLineDash([]);
+
+    for(var i = 0; i < ball.trail.length; i++){
+        ctx.globalAlpha = (i / ball.trail.length) * 0.35;
+        ctx.fillStyle = ball.color; // Trail mengikuti warna bola dinamis
+        ctx.beginPath();
+        ctx.arc(ball.trail[i].x, ball.trail[i].y, ball.r * (i / ball.trail.length), 0, Math.PI*2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Glow Bola Utama
+    ctx.shadowBlur = 14; ctx.shadowColor = ball.color;
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Paddles with TANTANGAN 1 (Denyut Glow)
+    ctx.shadowBlur = player.glow; // Menggunakan variabel glow yang naik-turun
+    ctx.shadowColor = '#4facfe'; ctx.fillStyle = '#4facfe';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+
+    var rp = twoPlayerMode ? player2 : ai;
+    ctx.shadowBlur = rp.glow; // Menggunakan variabel glow yang naik-turun
+    ctx.shadowColor = twoPlayerMode ? '#a78bfa' : '#ff6b6b';
+    ctx.fillStyle = twoPlayerMode ? '#a78bfa' : '#ff6b6b';
+    ctx.fillRect(rp.x, rp.y, rp.w, rp.h);
+    ctx.shadowBlur = 0;
+
+    particles.forEach(p => { ctx.globalAlpha = p.alpha; ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 3, 3); });
+    floatingTexts.forEach(ft => { 
+        ctx.globalAlpha = ft.life; ctx.fillStyle = ft.color; ctx.font = 'bold 20px Arial'; 
+        ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y); 
+    });
+    ctx.globalAlpha = 1;
+
+    ctx.textAlign = 'center'; 
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = 'bold 60px Arial';
+    ctx.fillText(scorePlayer + '   ' + scoreAI, W/2, 80);
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.4)'; ctx.font = 'bold 14px Arial';
+    ctx.fillText('LEVEL ' + currentLevel, W/2, 115);
+
+    // --- TANTANGAN 2: Speedometer Angka di HUD ---
+    var speedVal = Math.sqrt(ball.vx**2 + ball.vy**2);
+    var speedRounded = Math.round(speedVal);
+
+    ctx.textAlign = 'left'; 
+    ctx.font = 'bold 12px Arial'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('SPEED', 12, H - 55);
+
+    ctx.font = 'bold 20px Arial';
+    ctx.fillStyle = ball.color; // Warna angka mengikuti warna bola dinamis
+    ctx.fillText(speedRounded + ' px/s', 12, H - 15);
+
+    var maxSpeed = 700;
+    var barW = 100;
+    var barFill = Math.min(speedVal / maxSpeed, 1) * barW;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(12, H - 48, barW, 4);
+    ctx.fillStyle = ball.color;
+    ctx.fillRect(12, H - 48, barFill, 4);
+    
+    ctx.textAlign = 'right'; ctx.font = '12px Arial'; ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fillText(twoPlayerMode ? '2P MODE' : 'vs AI', W - 12, H - 10);
+    if(slowTimer > 0) { ctx.textAlign = 'center'; ctx.fillStyle = '#88ccff'; ctx.fillText('● SLOW MOTION', W/2, H - 10); }
+
+    ctx.restore();
+
+    if(gameState === 'gameover'){
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0,0,W,H);
+        ctx.textAlign = 'center'; ctx.fillStyle = winner.includes('WIN') ? '#4facfe' : '#ff6b6b';
+        ctx.font = 'bold 42px Arial'; ctx.fillText(winner, W/2, H/2 - 20);
+        ctx.fillStyle = '#fff'; ctx.font = '20px Arial'; ctx.fillText('Tekan R untuk Restart', W/2, H/2 + 30);
+    }
+}
+
+function loop(ts){
+    var dt = Math.min((ts - lastTime)/1000, 0.05);
+    lastTime = ts; update(dt); render(); requestAnimationFrame(loop);
+}
+
+document.addEventListener('keydown', function(e){
+    keys[e.key] = true;
+    if(gameState === 'splash' && (e.key === 'Enter' || e.key === ' ')) { twoPlayerMode = false; resetGame(); }
+    if(gameState === 'splash' && (e.key === 't' || e.key === 'T')) { twoPlayerMode = true; resetGame(); }
+    if(gameState === 'gameover' && (e.key === 'r' || e.key === 'R')) gameState = 'splash';
+    if (e.key === 'p' || e.key === 'P') { if (gameState === 'playing') { isPaused = !isPaused; }}
+    if(gameState === 'playing' && e.key === 'Shift' && slowTimer <= 0) slowTimer = SLOW_DURATION;
+    e.preventDefault();
+});
+document.addEventListener('keyup', function(e){ keys[e.key] = false; });
+requestAnimationFrame(function(ts){ lastTime = ts; loop(ts); });
+    </script>
+</body>
+</html>
