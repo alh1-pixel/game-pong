@@ -230,20 +230,42 @@ function update(dt) {
     }
 
     if(ball.x - ball.r < 0){
-        scoreAI++; playSound(300, 'sawtooth', 0.2, 0.08);
-        spawnFloat(W/2, H/2 - 30, 'AI Point', '#ff6b6b');
-        shakeTimer = 0.22; shakeInt = 8;
-        if(scoreAI >= WIN_SCORE){ gameState = 'gameover'; winner = twoPlayerMode ? 'PLAYER 2 WIN!' : 'YOU LOSE!'; }
-        else resetBall(1);
+        scoreAI++; 
+        playSound(300, 'sawtooth', 0.2, 0.08);
+        
+        // Logika teks melayang dinamis
+        var msg = twoPlayerMode ? 'PLAYER 2 POINT!' : 'AI POINT';
+        spawnFloat(W/2, H/2 - 30, msg, '#ff6b6b');
+        
+        shakeTimer = 0.22; 
+        shakeInt = 8;
+        if(scoreAI >= WIN_SCORE){ 
+            gameState = 'gameover'; 
+            winner = twoPlayerMode ? 'PLAYER 2 WIN!' : 'YOU LOSE!';
+        } else {
+            resetBall(1);
+        }
     }
 
     if(ball.x + ball.r > W){
-        scorePlayer++; playSound(300, 'sawtooth', 0.2, 0.08);
-        spawnFloat(W/2, H/2 - 30, 'Your Point!', '#43e97b');
+        scorePlayer++; 
+        playSound(300, 'sawtooth', 0.2, 0.08);
+        
+        // Logika teks melayang dinamis
+        var msg = twoPlayerMode ? 'PLAYER 1 POINT!' : 'YOUR POINT!';
+        spawnFloat(W/2, H/2 - 30, msg, '#43e97b');
+        
         if(scorePlayer < WIN_SCORE) currentLevel++;
-        if(scorePlayer > highScore){ highScore = scorePlayer; localStorage.setItem('pongHS', highScore); }
-        if(scorePlayer >= WIN_SCORE){ gameState = 'gameover'; winner = twoPlayerMode ? 'PLAYER 1 WIN!' : 'YOU WIN!'; }
-        else resetBall(-1);
+        if(scorePlayer > highScore){ 
+            highScore = scorePlayer; 
+            localStorage.setItem('pongHS', highScore);
+        }
+        if(scorePlayer >= WIN_SCORE){ 
+            gameState = 'gameover'; 
+            winner = twoPlayerMode ? 'PLAYER 1 WIN!' : 'YOU WIN!';
+        } else {
+            resetBall(-1);
+        }
     }
 }
 
