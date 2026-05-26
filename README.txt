@@ -18,7 +18,7 @@ DESKRIPSI :
   memukul bola dengan paddle bertujuan untuk 
   memasukkan bola ke area lawan untuk mencetak poin.
   Player diwajibkan bertahan dari serangan lawan 
-  sampai skor mencapai 5 untuk meraih kemenangan.
+  sampai skor mencapai 5 poin untuk meraih kemenangan.
 
 TEKNOLOGI : HTML5 Canvas + JavaScript
             Tidak ada library eksternal
