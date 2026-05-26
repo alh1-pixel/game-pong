@@ -165,10 +165,18 @@ function update(dt) {
     if(keys['s'] || keys['S']) player.y += player.speed * effectiveDt;
     player.y = Math.max(0, Math.min(H-player.h, player.y));
 
-    var dynamicPaddleHeight = Math.max(40, PH - (currentLevel - 1) * 10);
+    // Tentukan tinggi paddle kanan berdasarkan mode
+    var dynamicPaddleHeight;
+    if (twoPlayerMode) {
+        // Jika 2 Player, tinggi paddle tetap normal (PH)
+        dynamicPaddleHeight = PH;
+    } else {
+        // Jika lawan AI, tinggi mengecil seiring naiknya level
+        dynamicPaddleHeight = Math.max(40, PH - (currentLevel - 1) * 10);
+    }
+    
     var rightPaddle = twoPlayerMode ? player2 : ai;
     rightPaddle.h = dynamicPaddleHeight;
-
     // Denyut untuk paddle kanan (AI/P2)
     var distToPR = Math.hypot(ball.x - rightPaddle.x, ball.y - (rightPaddle.y + rightPaddle.h/2));
     rightPaddle.glow = (distToPR < 100) ? 10 + Math.sin(Date.now() * 0.01) * 8 : 10; //
