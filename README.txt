@@ -1,4 +1,3 @@
-Salin teks ini ke file README.txt di folder proyek kamu:
 ==============================================
 NAMA GIM  : Pong 1P
 DIBUAT    : Muhamad Al Hafiz — XI RPL — SMK Brantas Karangkates
@@ -8,7 +7,6 @@ CARA MAIN : Buka file index.html di browser Chrome/Firefox
             Tidak perlu install apapun!
 
 KONTROL   : Arrow Keys(Up & Down)(Untuk player 2) / WS — bergerak(Untuk player 1) 
-            [sesuaikan dengan kontrol gim kamu]
             R — restart
             enter/space — mulai game vs ai
             T — mulai game vs player (Multiplayer) 
